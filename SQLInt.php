@@ -1,4 +1,13 @@
 <?php
+    /*
+     * Project Name:    SQL Interface (sqlint)
+     * Version:         1.2
+     * Repository:      https://github.com/angelpolitis/sql-interface
+     * Created by:      Angel Politis
+     * Creation Date:   August 17 2018
+     * Last Modified:   November 25 2018
+     */
+
     # The SQLInterface class.
     class SQLInterface {
         # A private counter used to assign a unique id to each instance of the class.
@@ -9,6 +18,9 @@
         
         # A private array containing the necessary settings regarding the 'query' method.
         private static $default_query_settings = ["show_errors" => false, "rows_indexed" => false, "no_rows_as_array" => false];
+
+        # A private array containing the security tokens.
+        private static $security_tokens = ["<%", "%>"];
         
         # A private variable used to store instance-specific credentials.
         private $credentials = null;
@@ -38,9 +50,11 @@
                         # Check whether total decapsulation is enabled and return the appropriate data.
                         return (!!$all) ? $modify($result["modified"]) : ["extracted" => $result["extracted"][0], "modified" => $result["modified"]];
                     }
+
                     # If the delimiter isn't found the first time return a warning, otherwise return what's been processed.
                     else return ($counter === 1 && !$result["modified"]) ?  ((!!$show_errors) ? "Closing delimiter wasn't found!" : false) : $result;
                 }
+
                 # If the delimiter isn't found the first time return a warning, otherwise return what's been processed.
                 else return ($counter === 1 && !$result["modified"]) ? ((!!$show_errors) ? "Opening delimiter wasn't found!" : false) : $result;
             };
@@ -48,6 +62,12 @@
             # Run the function 'modify' to analyse and decapsulate the data given.
             return $modify($string);
         }
+
+        # The public function that sets the given tokens as the security tokens for the class.
+		public static function set_security_tokens ($token1, $token2) {
+			# Update the secutity tokens with the ones given.
+			self::$security_tokens = [$token1, $token2];
+		}
         
         # The constructor function of the class.
         public function __construct () {
@@ -204,7 +224,7 @@
                 $types = [];
 
                 # Check whether the query has been decapsulated successfully.
-                if ($filtered = self::decapsulate($query, ["<%", "%>", "?"], true)) {
+                if ($filtered = self::decapsulate($query, array_merge(self::$security_tokens, ["?"]), true)) {
                     # Iterate over every extracted key-value pair.
                     foreach ($filtered["extracted"] as $key => $value) {
                         # Determine the course of action based on the value.
