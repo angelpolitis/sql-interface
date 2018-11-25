@@ -1,7 +1,7 @@
 <?php
     /*/
      * Project Name:    SQL Interface (sqlint)
-     * Version:         1.3
+     * Version:         1.4
      * Repository:      https://github.com/angelpolitis/sql-interface
      * Created by:      Angel Politis
      * Creation Date:   August 17 2018
@@ -271,7 +271,7 @@
 
                     # Execute the statement and check whether the operation was successful.
                     if ($stmt -> execute()) {
-                        # Get the result out of the statement.
+                        # Get the result out of the statement and store it into a property.
                         $result = $this -> stmt_result = $stmt -> get_result();
 
                         # Close the statement.
@@ -331,6 +331,9 @@
                                     # Break out of the statement.
                                     break;
                             }
+
+                            # Set the internal pointer of the result to the first entry.
+                            $result -> data_seek(0);
                         }
                     }
                     else {
