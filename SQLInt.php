@@ -1,12 +1,12 @@
 <?php
-    /*
+    /*/
      * Project Name:    SQL Interface (sqlint)
-     * Version:         1.2
+     * Version:         1.3
      * Repository:      https://github.com/angelpolitis/sql-interface
      * Created by:      Angel Politis
      * Creation Date:   August 17 2018
      * Last Modified:   November 25 2018
-     */
+    /*/
 
     # The SQLInterface class.
     class SQLInterface {
@@ -272,7 +272,7 @@
                     # Execute the statement and check whether the operation was successful.
                     if ($stmt -> execute()) {
                         # Get the result out of the statement.
-                        $result = $stmt -> get_result();
+                        $result = $this -> stmt_result = $stmt -> get_result();
 
                         # Close the statement.
                         $stmt -> close();
