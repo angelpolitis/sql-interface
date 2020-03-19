@@ -1,11 +1,11 @@
 <?php
     /*/
      * Project Name:    SQL Interface (sqlint)
-     * Version:         1.4
+     * Version:         1.5
      * Repository:      https://github.com/angelpolitis/sql-interface
      * Created by:      Angel Politis
-     * Creation Date:   August 17 2018
-     * Last Modified:   November 25 2018
+     * Creation Date:   Aug 17 2018
+     * Last Modified:   Mar 19 2020
     /*/
 
     # The SQLInterface class.
@@ -17,7 +17,7 @@
         private static $default_credentials = ["host" => "localhost", "username" => "root", "password" => "", "database" => ""];
         
         # A private array containing the necessary settings regarding the 'query' method.
-        private static $default_query_settings = ["show_errors" => false, "rows_indexed" => false, "no_rows_as_array" => false];
+        private static $default_query_settings = ["charset" => "utf8", "show_errors" => false, "rows_indexed" => false, "no_rows_as_array" => false];
 
         # A private array containing the security tokens.
         private static $security_tokens = ["<%", "%>"];
@@ -189,9 +189,6 @@
             # Create a variable to store the results of the operation.
             $results = [];
             
-            # Normalise the query settings.
-            $settings = isset($this -> query_settings) ? $this -> query_settings : self::$default_query_settings;
-            
             # Iterate over the loaded content of the context.
             foreach ($this -> content as $query) {
                 # Execute the iterated query.
@@ -261,6 +258,9 @@
                 $type_string = implode("", $types);
                 $arguments = array_merge([&$type_string], $values);
 
+                # Set the charset of the connection.
+                $this -> connection -> set_charset($settings["charset"]);
+
                 # Prepare the query and check whether the operation was successful.
                 if ($stmt = $this -> connection -> prepare($query)) {
                     # Check whether the typestring isn't empty.
@@ -327,7 +327,7 @@
                                 case $rows === 0:
                                     # Set the result to an empty array or false.
                                     $results = $settings["no_rows_as_array"] ? [] : false;
-
+                                    
                                     # Break out of the statement.
                                     break;
                             }
@@ -337,13 +337,19 @@
                         }
                     }
                     else {
+                        # Cache the connection error as the latest error.
+                        $this -> lastError = $this -> connection -> error;
+
                         # Set the outcome explaining the cause of the operation's failure.
-                        $outcome = $settings["show_errors"] ? __METHOD__ . " → Query execution failed due to the following error: " . $this -> connection -> error : false;
+                        $outcome = $settings["show_errors"] ? __METHOD__ . " → Query execution failed due to the following error: " . $this -> lastError : false;
                     }
                 }
                 else {
+                    # Cache the connection error as the latest error.
+                    $this -> lastError = $this -> connection -> error;
+                    
                     # Set the outcome explaining the cause of the operation's failure.
-                    $outcome = $settings["show_errors"] ? __METHOD__ . " → Query preparation failed due to the following error: " . $this -> connection -> error : false;
+                    $outcome = $settings["show_errors"] ? __METHOD__ . " → Query preparation failed due to the following error: " . $this -> lastError : false;
                 }
             }
             else {
@@ -352,14 +358,14 @@
             }
             
             # Cache the result of the operation.
-            $this -> result = $outcome ? $outcome : $results;
+            $this -> result = isset($outcome) ? $outcome : $results;
             
             # Return the context.
             return $this;
         }
         
-        # The function that configurates the query settings of an instance
-        public function query_config ($data) {
+        # The function that configurates the query settings of an instance.
+        public function configure ($data) {
             # Check whether the argument given is an array.
             if (is_array($data)) {
                 # Check whether the function was called by the context.
@@ -369,13 +375,16 @@
                         # Check whether the iterated key exists in the given data.
                         if (isset($data[$key])) {
                             # Update the query setting with the value given.
-                            $this -> query_settings[$key] = !!$data[$key];
+                            $this -> query_settings[$key] = $data[$key];
                         }
                         else {
                             # Update the query setting with the default value.
                             $this -> query_settings[$key] = $value;
                         }
                     }
+            
+                    # Return the context.
+                    return $this;
                 }
                 else {
                     # Iterate over every key in the data.
@@ -383,7 +392,7 @@
                         # Check whether the key exists in the default query settings.
                         if (isset(self::$default_query_settings[$key])) {
                             # Update the default query setting with the value given.
-                            self::$default_query_settings[$key] = !!$value;
+                            self::$default_query_settings[$key] = $value;
                         }
                     }
                 }
@@ -392,9 +401,12 @@
                 # Throw an exception.
                 throw new Exception(__METHOD__ . " → The given argument must be an array.");
             }
-            
-            # Return the context.
-            return $this;
         }
+
+        # The function that configurates the query settings of an instance.
+	public function query_config ($data) {
+		# Call the 'configure' method.
+		return $this -> configure($data);
+	}
     }
 ?>
