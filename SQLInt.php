@@ -1,11 +1,11 @@
 <?php
     /*/
      * Project Name:    SQL Interface (sqlint)
-     * Version:         1.5
+     * Version:         1.6
      * Repository:      https://github.com/angelpolitis/sql-interface
      * Created by:      Angel Politis
      * Creation Date:   Aug 17 2018
-     * Last Modified:   Mar 19 2020
+     * Last Modified:   Nov 07 2020
     /*/
 
     # The SQLInterface class.
@@ -14,19 +14,28 @@
         private static $counter = 0;
         
         # A private array containing the necessary credentials for the class to establish a database connection.
-        private static $default_credentials = ["host" => "localhost", "username" => "root", "password" => "", "database" => ""];
+        private static $defaultCredentials = ["host" => "localhost", "username" => "root", "password" => "", "database" => ""];
         
         # A private array containing the necessary settings regarding the 'query' method.
-        private static $default_query_settings = ["charset" => "utf8", "show_errors" => false, "rows_indexed" => false, "no_rows_as_array" => false];
+        private static $defaultQuerySettings = ["charset" => "utf8", "show_errors" => false, "rows_indexed" => false, "no_rows_as_array" => false];
 
         # A private array containing the security tokens.
-        private static $security_tokens = ["<%", "%>"];
+        private static $securityTokens = ["<%", "%>"];
+
+        # A private variable used to store the active connection to the database.
+        private $connection = null;
         
         # A private variable used to store instance-specific credentials.
         private $credentials = null;
+
+        # A private variable used to store the latest error.
+        private $lastError = null;
         
         # A private variable used to store settings regarding the 'query' method.
-        private $query_settings = null;
+        private $querySettings = null;
+
+        # A private variable used to store the result of the latest query.
+        private $result = null;
         
         # The private function used to decapsulate a given string from its delimiters.
         private static function decapsulate ($string, $delimiters, $all = false, $show_errors = false) {
@@ -64,9 +73,9 @@
         }
 
         # The public function that sets the given tokens as the security tokens for the class.
-		public static function set_security_tokens ($token1, $token2) {
+		public static function setSecurityTokens ($token1, $token2) {
 			# Update the secutity tokens with the ones given.
-			self::$security_tokens = [$token1, $token2];
+			self::$securityTokens = [$token1, $token2];
 		}
         
         # The constructor function of the class.
@@ -78,10 +87,16 @@
         # The function that uses the credentials of the instance or the default ones to initiate a database connection.
         public function connect () {
             # Fetch the correct credentials.
-            $credentials = isset($this -> credentials) ? $this -> credentials : self::$default_credentials;
+            $credentials = isset($this -> credentials) ? $this -> credentials : self::$defaultCredentials;
             
             # Create a new MySQLi instance using the credentials.
-            $this -> connection = new mysqli(...array_values($credentials)) or die(__METHOD__ . " → The system failed to establish a connection due to the following error: " . $this -> connection -> error);
+            $this -> connection = new mysqli(...array_values($credentials));
+            
+            # Check whether the connection isn't a MySQLi instance.
+            if (!($this -> connection instanceof mysqli)) {
+                # Throw an exception.
+                throw new SQLInterfaceException(__METHOD__ . " → The system failed to establish a connection due to the following error: " . $this -> connection -> error);
+            }
             
             # Return the context.
             return $this;
@@ -90,7 +105,13 @@
         # The function that disconnects from an active database connection.
         public function disconnect () {
             # Create a new MySQLi instance using the credentials.
-            $this -> connection -> close() or die(__METHOD__ . " → The system failed to shut down the connection due to the following error: " . $this -> connection -> error);
+            $this -> connection -> close();
+
+            # Check whether the connection isn't a MySQLi instance.
+            if (!($this -> connection instanceof mysqli)) {
+                # Throw an exception.
+                throw new SQLInterfaceException(__METHOD__ . " → The system failed to shut down the connection due to the following error: " . $this -> connection -> error);
+            }
             
             # Return the context.
             return $this;
@@ -120,14 +141,14 @@
                     }
                     else {
                         # Iterate over every property of the default credentials.
-                        foreach (self::$default_credentials as $key => $value) {
+                        foreach (self::$defaultCredentials as $key => $value) {
                             # Set the value to the existent default credential if it's not set.
-                            $data[$key] = isset($data[$key]) ? $data[$key] : self::$default_credentials[$key];
+                            $data[$key] = isset($data[$key]) ? $data[$key] : self::$defaultCredentials[$key];
                         }
                     }
 
                     # Use the default credentials to sort the data array's key in the proper order.
-                    $data = array_merge(self::$default_credentials, $data);
+                    $data = array_merge(self::$defaultCredentials, $data);
 
                     # Set the data array to the 'credentials' property of the context.
                     $this -> credentials = $data;
@@ -137,29 +158,65 @@
                 }
                 else {
                     # Iterate over every property of the default credentials.
-                    foreach (self::$default_credentials as $key => $value) {
+                    foreach (self::$defaultCredentials as $key => $value) {
                         # Set the value to the existent default credential if it's not set.
-                        $data[$key] = isset($data[$key]) ? $data[$key] : self::$default_credentials[$key];
+                        $data[$key] = isset($data[$key]) ? $data[$key] : self::$defaultCredentials[$key];
                     }
 
                     # Use the default credentials to sort the data array's key in the proper order.
-                    $data = array_merge(self::$default_credentials, $data);
+                    $data = array_merge(self::$defaultCredentials, $data);
 
-                    # Set the data array to the 'default_credentials' property of the class.
-                    self::$default_credentials = $data;
+                    # Set the data array to the 'defaultCredentials' property of the class.
+                    self::$defaultCredentials = $data;
                 }
             }
             else {
                 # Check whether the function was called by the context.
                 if (isset($this) && $this instanceof self) {
                     # Return the credentials, if set, or the default credentials.
-                    return isset($this -> credentials) ? $this -> credentials : self::$default_credentials;
+                    return isset($this -> credentials) ? $this -> credentials : self::$defaultCredentials;
                 }
                 else {
                     # Return the default credentials.
-                    return self::$default_credentials;
+                    return self::$defaultCredentials;
                 }
             }
+        }
+
+        # The function that returns the active MySQLi connection.
+        public function getConnection () : ?mysqli {
+            # Return the active database connection.
+            return $this -> connection;
+        }
+        
+        # The function that returns the latest error returned by the database.
+        public function getLastError () : ?String {
+            # Return the last error of the context.
+            return $this -> lastError;
+        }
+
+        # The function that returns the last insert id of the active connection.
+        public function getLastInsertID () : Int {
+            # Check whether the connection isn't a MySQLi instance.
+            if (!($this -> connection instanceof mysqli)) {
+                # Throw an exception.
+                throw new SQLInterfaceException(__METHOD__. " → requires an active database connection.");
+            }
+
+            # Return the last insert id.
+            return $this -> connection -> insert_id;
+        }
+
+        # The function that returns the result of the latest query.
+        public function getResult () {
+            # Return the result of the latest query.
+            return $this -> result;
+        }
+
+        # The function that checks whether an active connection exists.
+        public function isConnected () : Bool {
+            # Return whether the connection is a MySQLi instance.
+            return $this -> connection instanceof mysqli;
         }
             
         # The function that loads an SQL file from a given link.
@@ -177,7 +234,7 @@
             }
             else {
                 # Throw an exception.
-                throw new Exception(__METHOD__ . " → The file at the given directory doesn't exist or is inaccessible.");
+                throw new SQLInterfaceException(__METHOD__ . " → The file at the given directory doesn't exist or is inaccessible.");
             }
             
             # Return the context.
@@ -210,7 +267,7 @@
             # Check whether there is an active database connection.
             if ($this -> connection && $this -> connection -> ping()) {
                 # Normalise the query settings.
-                $settings = isset($this -> query_settings) ? $this -> query_settings : self::$default_query_settings;
+                $settings = isset($this -> querySettings) ? $this -> querySettings : self::$defaultQuerySettings;
 
                 # Create an array to store the final results and a variable to store the outcome of the operation in case it fails.
                 $results = [];
@@ -221,7 +278,7 @@
                 $types = [];
 
                 # Check whether the query has been decapsulated successfully.
-                if ($filtered = self::decapsulate($query, array_merge(self::$security_tokens, ["?"]), true)) {
+                if ($filtered = self::decapsulate($query, array_merge(self::$securityTokens, ["?"]), true)) {
                     # Iterate over every extracted key-value pair.
                     foreach ($filtered["extracted"] as $key => $value) {
                         # Determine the course of action based on the value.
@@ -354,7 +411,7 @@
             }
             else {
                 # Throw an exception.
-                throw new Exception(__METHOD__. " → requires an active database connection.");
+                throw new SQLInterfaceException(__METHOD__. " → requires an active database connection.");
             }
             
             # Cache the result of the operation.
@@ -371,15 +428,15 @@
                 # Check whether the function was called by the context.
                 if (isset($this) && $this instanceof self) {
                     # Iterate over every key in the default settings.
-                    foreach (self::$default_query_settings as $key => $value) {
+                    foreach (self::$defaultQuerySettings as $key => $value) {
                         # Check whether the iterated key exists in the given data.
                         if (isset($data[$key])) {
                             # Update the query setting with the value given.
-                            $this -> query_settings[$key] = $data[$key];
+                            $this -> querySettings[$key] = $data[$key];
                         }
                         else {
                             # Update the query setting with the default value.
-                            $this -> query_settings[$key] = $value;
+                            $this -> querySettings[$key] = $value;
                         }
                     }
             
@@ -390,9 +447,9 @@
                     # Iterate over every key in the data.
                     foreach ($data as $key => $value) {
                         # Check whether the key exists in the default query settings.
-                        if (isset(self::$default_query_settings[$key])) {
+                        if (isset(self::$defaultQuerySettings[$key])) {
                             # Update the default query setting with the value given.
-                            self::$default_query_settings[$key] = $value;
+                            self::$defaultQuerySettings[$key] = $value;
                         }
                     }
                 }
@@ -402,11 +459,8 @@
                 throw new Exception(__METHOD__ . " → The given argument must be an array.");
             }
         }
-
-        # The function that configurates the query settings of an instance.
-	public function query_config ($data) {
-		# Call the 'configure' method.
-		return $this -> configure($data);
-	}
     }
+
+    # The SQLInterfaceException class.
+    class SQLInterfaceException extends Exception {};
 ?>
