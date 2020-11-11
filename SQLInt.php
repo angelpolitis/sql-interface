@@ -1,11 +1,11 @@
 <?php
     /*/
      * Project Name:    SQL Interface (sqlint)
-     * Version:         1.6
+     * Version:         1.6.1
      * Repository:      https://github.com/angelpolitis/sql-interface
      * Created by:      Angel Politis
      * Creation Date:   Aug 17 2018
-     * Last Modified:   Nov 07 2020
+     * Last Modified:   Nov 11 2020
     /*/
 
     # The SQLInterface class.
@@ -112,6 +112,9 @@
                 # Throw an exception.
                 throw new SQLInterfaceException(__METHOD__ . " → The system failed to shut down the connection due to the following error: " . $this -> connection -> error);
             }
+
+            # Nullify the connection property.
+            $this -> connection = null;
             
             # Return the context.
             return $this;
