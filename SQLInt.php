@@ -1,11 +1,11 @@
 <?php
     /*/
      * Project Name:    SQL Interface (sqlint)
-     * Version:         1.6.1
+     * Version:         1.6.2
      * Repository:      https://github.com/angelpolitis/sql-interface
      * Created by:      Angel Politis
      * Creation Date:   Aug 17 2018
-     * Last Modified:   Nov 11 2020
+     * Last Modified:   Nov 21 2020
     /*/
 
     # The SQLInterface class.
@@ -266,155 +266,155 @@
         }
         
         # The function that queries the database using an open connection.
-        public function query ($query) {
-            # Check whether there is an active database connection.
-            if ($this -> connection && $this -> connection -> ping()) {
-                # Normalise the query settings.
-                $settings = isset($this -> querySettings) ? $this -> querySettings : self::$defaultQuerySettings;
+        public function query (String $query, Array $options = []) {
+            # Check whether there isn't an active database connection.
+            if (!($this -> connection && $this -> connection -> ping())) {
+                # Throw an exception.
+                throw new SQLInterfaceException(__METHOD__. " → requires an active database connection.");
+            }
 
-                # Create an array to store the final results and a variable to store the outcome of the operation in case it fails.
-                $results = [];
-                $outcome = null;
+            # Normalise the query settings and then merge them with the given options.
+            $settings = isset($this -> querySettings) ? $this -> querySettings : self::$defaultQuerySettings;
+            $settings = array_merge($settings, $options);
 
-                # The arrays that will hold the values and types of the parameters.
-                $values = [];
-                $types = [];
+            # Create an array to store the final results and a variable to store the outcome of the operation in case it fails.
+            $results = [];
+            $outcome = null;
 
-                # Check whether the query has been decapsulated successfully.
-                if ($filtered = self::decapsulate($query, array_merge(self::$securityTokens, ["?"]), true)) {
-                    # Iterate over every extracted key-value pair.
-                    foreach ($filtered["extracted"] as $key => $value) {
-                        # Determine the course of action based on the value.
-                        switch ($value) {
-                            # Check whether the value is an integer.
-                            case strval(intval($value)):
-                                # Push 'i' for integer in the types array.
-                                $types[] = "i";
+            # The arrays that will hold the values and types of the parameters.
+            $values = [];
+            $types = [];
 
-                                # Break out of the statement.
-                                break;
+            # Check whether the query has been decapsulated successfully.
+            if ($filtered = self::decapsulate($query, array_merge(self::$securityTokens, ["?"]), true)) {
+                # Iterate over every extracted key-value pair.
+                foreach ($filtered["extracted"] as $key => $value) {
+                    # Determine the course of action based on the value.
+                    switch ($value) {
+                        # Check whether the value is an integer.
+                        case strval(intval($value)):
+                            # Push 'i' for integer in the types array.
+                            $types[] = "i";
 
-                            # Check whether the value is a double.
-                            case strval(doubleval($value)):
-                                # Push 'd' for double in the types array.
-                                $types[] = "d";
+                            # Break out of the statement.
+                            break;
 
-                                # Break out of the statement.
-                                break;
+                        # Check whether the value is a double.
+                        case strval(doubleval($value)):
+                            # Push 'd' for double in the types array.
+                            $types[] = "d";
 
-                            # In any other case consider the value a string.
-                            default: $types[] = "s";
-                        }
+                            # Break out of the statement.
+                            break;
 
-                        # Add the value by reference to values array.
-                        $values[] = &$filtered["extracted"][$key];
+                        # In any other case consider the value a string.
+                        default: $types[] = "s";
                     }
 
-                    # Assign the modified query to the query.
-                    $query = $filtered["modified"];
+                    # Add the value by reference to values array.
+                    $values[] = &$filtered["extracted"][$key];
                 }
 
-                # Create the 'arguments' array that will be passed to the 'bind_params' function.
-                $type_string = implode("", $types);
-                $arguments = array_merge([&$type_string], $values);
+                # Assign the modified query to the query.
+                $query = $filtered["modified"];
+            }
 
-                # Set the charset of the connection.
-                $this -> connection -> set_charset($settings["charset"]);
+            # Create the 'arguments' array that will be passed to the 'bind_params' function.
+            $type_string = implode("", $types);
+            $arguments = array_merge([&$type_string], $values);
 
-                # Prepare the query and check whether the operation was successful.
-                if ($stmt = $this -> connection -> prepare($query)) {
-                    # Check whether the typestring isn't empty.
-                    if ($type_string) {
-                        # Bind the parameters to the statement.
-                        $stmt -> bind_param(...$arguments);
-                    }
+            # Set the charset of the connection.
+            $this -> connection -> set_charset($settings["charset"]);
 
-                    # Execute the statement and check whether the operation was successful.
-                    if ($stmt -> execute()) {
-                        # Get the result out of the statement and store it into a property.
-                        $result = $this -> stmt_result = $stmt -> get_result();
+            # Prepare the query and check whether the operation was successful.
+            if ($stmt = $this -> connection -> prepare($query)) {
+                # Check whether the typestring isn't empty.
+                if ($type_string) {
+                    # Bind the parameters to the statement.
+                    $stmt -> bind_param(...$arguments);
+                }
 
-                        # Close the statement.
-                        $stmt -> close();
+                # Execute the statement and check whether the operation was successful.
+                if ($stmt -> execute()) {
+                    # Get the result out of the statement and store it into a property.
+                    $result = $this -> stmt_result = $stmt -> get_result();
 
-                        # Check whether the result is a boolean.
-                        if (is_bool($result)) {
-                            # Set the outcome mentioning the success of the operation.
-                            $outcome = $settings["show_errors"] ? __METHOD__ . " → Query executed successfully!" : true;
-                        }
-                        else {
-                            # Cache the number of rows found.
-                            $rows = $result -> num_rows;
-                            
-                            # Select a course of action based on the number of rows found.
-                            switch (true) {
-                                # Check whether more than one rows were found.
-                                case $rows > 1:
-                                    # Iterate over every row found.
-                                    while ($values = $result -> fetch_assoc()) {
-                                        # Cache the value of the column directly, if only one column was fetched.
-                                        $row = (count($values) === 1) ? $values[key($values)] : $values;
+                    # Close the statement.
+                    $stmt -> close();
 
-                                        # Insert the value in the results.
-                                        $results[] = $row;
-                                    }
-
-                                    # Break out of the statement.
-                                    break;
-
-                                # Check whether one row was found.
-                                case $rows === 1:
-                                    # Fetch and cache the row.
-                                    $row = $result -> fetch_assoc();
-
-                                    # Cache the value of the column directly, if only one column was fetched.
-                                    $row = (count($row) === 1) ? $row[key($row)] : $row;
-
-                                    # Check whether the rows should be indexed.
-                                    if ($settings["rows_indexed"]) {
-                                        # Insert the value in the results.
-                                        $results[] = $row;
-                                    }
-                                    else {
-                                        # Otherwise, assign the value to the results.
-                                        $results = $row;
-                                    }
-
-                                    # Break out of the statement.
-                                    break;
-
-                                # Check whether no rows were found.
-                                case $rows === 0:
-                                    # Set the result to an empty array or false.
-                                    $results = $settings["no_rows_as_array"] ? [] : false;
-                                    
-                                    # Break out of the statement.
-                                    break;
-                            }
-
-                            # Set the internal pointer of the result to the first entry.
-                            $result -> data_seek(0);
-                        }
+                    # Check whether the result is a boolean.
+                    if (is_bool($result)) {
+                        # Set the outcome mentioning the success of the operation.
+                        $outcome = $settings["show_errors"] ? __METHOD__ . " → Query executed successfully!" : true;
                     }
                     else {
-                        # Cache the connection error as the latest error.
-                        $this -> lastError = $this -> connection -> error;
+                        # Cache the number of rows found.
+                        $rows = $result -> num_rows;
+                        
+                        # Select a course of action based on the number of rows found.
+                        switch (true) {
+                            # Check whether more than one rows were found.
+                            case $rows > 1:
+                                # Iterate over every row found.
+                                while ($values = $result -> fetch_assoc()) {
+                                    # Cache the value of the column directly, if only one column was fetched.
+                                    $row = (count($values) === 1) ? $values[key($values)] : $values;
 
-                        # Set the outcome explaining the cause of the operation's failure.
-                        $outcome = $settings["show_errors"] ? __METHOD__ . " → Query execution failed due to the following error: " . $this -> lastError : false;
+                                    # Insert the value in the results.
+                                    $results[] = $row;
+                                }
+
+                                # Break out of the statement.
+                                break;
+
+                            # Check whether one row was found.
+                            case $rows === 1:
+                                # Fetch and cache the row.
+                                $row = $result -> fetch_assoc();
+
+                                # Cache the value of the column directly, if only one column was fetched.
+                                $row = (count($row) === 1) ? $row[key($row)] : $row;
+
+                                # Check whether the rows should be indexed.
+                                if ($settings["rows_indexed"]) {
+                                    # Insert the value in the results.
+                                    $results[] = $row;
+                                }
+                                else {
+                                    # Otherwise, assign the value to the results.
+                                    $results = $row;
+                                }
+
+                                # Break out of the statement.
+                                break;
+
+                            # Check whether no rows were found.
+                            case $rows === 0:
+                                # Set the result to an empty array or false.
+                                $results = $settings["no_rows_as_array"] ? [] : false;
+                                
+                                # Break out of the statement.
+                                break;
+                        }
+
+                        # Set the internal pointer of the result to the first entry.
+                        $result -> data_seek(0);
                     }
                 }
                 else {
                     # Cache the connection error as the latest error.
                     $this -> lastError = $this -> connection -> error;
-                    
+
                     # Set the outcome explaining the cause of the operation's failure.
-                    $outcome = $settings["show_errors"] ? __METHOD__ . " → Query preparation failed due to the following error: " . $this -> lastError : false;
+                    $outcome = $settings["show_errors"] ? __METHOD__ . " → Query execution failed due to the following error: " . $this -> lastError : false;
                 }
             }
             else {
-                # Throw an exception.
-                throw new SQLInterfaceException(__METHOD__. " → requires an active database connection.");
+                # Cache the connection error as the latest error.
+                $this -> lastError = $this -> connection -> error;
+                
+                # Set the outcome explaining the cause of the operation's failure.
+                $outcome = $settings["show_errors"] ? __METHOD__ . " → Query preparation failed due to the following error: " . $this -> lastError : false;
             }
             
             # Cache the result of the operation.
