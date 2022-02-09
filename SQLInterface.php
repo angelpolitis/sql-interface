@@ -1,11 +1,11 @@
 <?php
     /*/
      * Project Name:    SQL Interface (sqlint)
-     * Version:         2.1.0
+     * Version:         2.1.1
      * Repository:      https://github.com/angelpolitis/sql-interface
      * Created by:      Angel Politis
      * Creation Date:   Aug 17 2018
-     * Last Modified:   Feb 08 2022
+     * Last Modified:   Feb 09 2022
     /*/
 
     /*/
@@ -539,7 +539,7 @@
                 }
 
                 # Save the extracted value into the result.
-                $values[] = substr($string, $openingIndex + $delimiterLengths[0], $closingIndex - $delimiterLengths[1] - $openingIndex);
+                $values[$openingIndex + $delimiterLengths[0]] = substr($string, $openingIndex + $delimiterLengths[0], $closingIndex - $delimiterLengths[1] - $openingIndex);
 
                 # Save the modified string by keeping the part before the opening delimiter, the placeholder, and the part after the closing delimiter.
                 $string = substr($string, 0, $openingIndex)
@@ -825,7 +825,7 @@
             $query = self::extract($query, $values, $settings["tokens"], '?', true);
 
             # Iterate over the extracted values.
-            foreach ($values as &$value) {
+            foreach ($values as $index => &$value) {
                 # Check whether the value is an integer.
                 if ($value === strval(intval($value))) {
                     # Conside the value an integer.
@@ -844,9 +844,21 @@
                     $value = doubleval($value);
                 }
 
+                # Check whether the value is 'null'.
+                elseif (strtolower($value) === "null") {
+                    # Remove the placeholder from the query and add NULL, as this value can't be parameterised.
+                    $query = substr($query, 0, $index - 1) . $values[$index] . substr($query, $index);
+
+                    # Unset the value from the array.
+                    unset($values[$index]);
+                }
+
                 # In any other case consider the value a string.
                 else $types[] = 's';
             }
+
+            # Unset the value reference.
+            unset($value);
 
             # Set the charset of the connection.
             $this -> connection -> set_charset($settings["charset"]);
@@ -905,7 +917,7 @@
 
                 # Create the arguments array that will be passed to the 'bind_params' function.
                 $typeString = implode("", $types);
-                $arguments = array_merge([&$typeString], $values);
+                $arguments = array_merge([&$typeString], array_values($values));
 
                 # Bind the parameters to the statement.
                 $stmt -> bind_param(...$arguments);
