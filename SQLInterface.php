@@ -1,11 +1,16 @@
 <?php
     /*/
      * Project Name:    SQL Interface (sqlint)
-     * Version:         2.0.0
+     * Version:         2.1.0
      * Repository:      https://github.com/angelpolitis/sql-interface
      * Created by:      Angel Politis
      * Creation Date:   Aug 17 2018
-     * Last Modified:   Feb 07 2022
+     * Last Modified:   Feb 08 2022
+    /*/
+
+    /*/
+     * NOTES:
+     * • secureSQLValue()'s SQL expression tokens ('{', '}') are hardcoded. Make them dynamic and settable.
     /*/
 
     /**
@@ -18,6 +23,9 @@
      * @method static array getCredentials() Gets the credentials (class-specific) used to connect to a database server.  
      * These settings can be overriden for each instance individually.
      * @method array getCredentials() Gets the credentials (instance-specific) used to connect to a database server.
+     * @method static array getQuerySettings() Gets the settings (class-specific) used when querying the database.  
+     * These settings can be overriden for each instance individually.
+     * @method array getQuerySettings() Gets the settings (instance-specific) used when querying the database.  
      * @method static array setCredentials(array $credentials) Sets the credentials (class-specific) used to connect to a database server.  
      * These settings can be overriden for each instance individually.
      * @method array setCredentials(array $credentials) Sets the credentials (instance-specific) used to connect to a database server.
@@ -653,6 +661,24 @@
         }
 
         /**
+         * Gets the settings (class-specific) used when querying the database.
+         * @return array the query settings
+         */
+        protected static function getQuerySettings__c () : array {
+            # Return the default query settings.
+            return self::$defaultQuerySettings;
+        }
+
+        /**
+         * Gets the settings (instance-specific) used when querying the database.
+         * @return array the query settings
+         */
+        protected function getQuerySettings__i () : array {
+            # Return the query settings.
+            return $this -> querySettings;
+        }
+
+        /**
          * Gets the result of the last executed query.
          * @return mixed the result
          */
@@ -799,12 +825,24 @@
             $query = self::extract($query, $values, $settings["tokens"], '?', true);
 
             # Iterate over the extracted values.
-            foreach ($values as $value) {
+            foreach ($values as &$value) {
                 # Check whether the value is an integer.
-                if ($value === strval(intval($value))) $types[] = 'i';
+                if ($value === strval(intval($value))) {
+                    # Conside the value an integer.
+                    $types[] = 'i';
+
+                    # Turn the value into an integer.
+                    $value = intval($value);
+                }
 
                 # Check whether the value is a double.
-                elseif ($value === strval(doubleval($value))) $types[] = 'd';
+                elseif ($value === strval(doubleval($value))) {
+                    # Conside the value an integer.
+                    $types[] = 'd';
+
+                    # Turn the value into a double.
+                    $value = doubleval($value);
+                }
 
                 # In any other case consider the value a string.
                 else $types[] = 's';
@@ -845,6 +883,9 @@
                     # Throw an exception, if appropriate.
                     if ($settings["throwErrors"]) throw new SQLInterfaceQueryExecutionErrorException($this);
                 }
+                
+                # Cache the number of affected rows into the log.
+                $this -> queryLog[$queryLogIndex]["affectedRows"] = $this -> connection -> affected_rows;
             }
             else {
                 # Prepare a statement out of the query.
@@ -883,7 +924,10 @@
                     # Throw an exception, if appropriate.
                     if ($settings["throwErrors"]) throw new SQLInterfaceStatementExecutionFailureException($this);
                 }
-
+                
+                # Cache the number of affected rows into the log.
+                $this -> queryLog[$queryLogIndex]["affectedRows"] = $stmt -> affected_rows;
+                
                 # Get the result out of the statement and store it.
                 $queryResult = $stmt -> get_result();
 
@@ -928,18 +972,28 @@
             }
             else {
                 # Overwrite the result array to store the result of the query.
-                $result = $queryResult;
+                $result = (sizeof($values) === 0) ? $queryResult : !isset($this -> lastError);
 
-                # Insert the affected rows and last insert id into the log.
-                $this -> queryLog[$queryLogIndex] += [
-                    "affectedRows" => $this -> connection -> affected_rows,
-                    "lastInsertId" => $this -> connection -> insert_id
-                ];
+                # Cache the last insert id.
+                $lastId = $this -> connection -> insert_id;
 
-                # Check whether there is a last insert id .
-                if ($this -> connection -> insert_id) {
-                    # Calculate the ids of all inserted rows.
-                    $this -> lastInsertIds = range($this -> connection -> insert_id, $this -> connection -> affected_rows - 1);
+                # Cache the affected rows.
+                $affectedRows = $this -> queryLog[$queryLogIndex]["affectedRows"];
+
+                # Insert the last insert id into the log.
+                $this -> queryLog[$queryLogIndex]["lastInsertId"] = $lastId;
+
+                # Check whether there is a last insert id.
+                if ($lastId) {
+                    # Check whether the number of affected rows is greater than 1.
+                    if ($affectedRows > 1) {
+                        # Calculate the ids of all inserted rows.
+                        $this -> lastInsertIds = range($lastId, $lastId + $affectedRows - 1);
+                    }
+                    else {
+                        # Insert the last insert id as the only id into the ids array.
+                        $this -> lastInsertIds = [$lastId];
+                    }
 
                     # Add the last insert ids to the log.
                     $this -> queryLog[$queryLogIndex]["lastInsertIds"] = $this -> lastInsertIds;
@@ -1018,8 +1072,11 @@
             # Turn the value into a number if it's a bool.
             if (is_bool($value)) $value = +$value;
 
+            # Cache the default security tokens.
+            $tokens = self::$defaultQuerySettings["tokens"];
+
             # Return the value encapsulated in a pair of security tokens.
-            return "<%$value%>";
+            return $tokens[0] . $value . $tokens[1];
         }
 
         /**
