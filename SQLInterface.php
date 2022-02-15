@@ -1,11 +1,11 @@
 <?php
     /*/
      * Project Name:    SQL Interface (sqlint)
-     * Version:         2.1.1
+     * Version:         2.1.2
      * Repository:      https://github.com/angelpolitis/sql-interface
      * Created by:      Angel Politis
      * Creation Date:   Aug 17 2018
-     * Last Modified:   Feb 09 2022
+     * Last Modified:   Feb 15 2022
     /*/
 
     /*/
@@ -721,9 +721,19 @@
 
             # Set the class's warning handler to intercept warnings thrown until it's restored.
             set_error_handler($handleWarning, E_WARNING);
-
-            # Cache whether the connection is a MySQLi instance, has a thread ID and is active.
-            $isConnected = ($this -> connection instanceof mysqli) && ($this -> connection -> thread_id !== false) && $this -> connection -> ping();
+            
+            # Attempt to execute the following block.
+            try {
+                # Cache whether the connection is a MySQLi instance without errors, has a thread ID and is active.
+                $isConnected = $this -> connection instanceof mysqli
+                    && !$this -> connection -> error
+                    && $this -> connection -> thread_id !== false
+                    && $this -> connection -> ping();
+            }
+            catch (Throwable $e) {
+                # Assume there's no connection.
+                $isConnected = false;
+            }
 
             # Restore the error handler.
             restore_error_handler();
@@ -753,12 +763,7 @@
             $file = &$this -> files[$name];
             
             # Strip the loaded content off all comments and excess whitespace.
-            $file = preg_replace("/((?:-- |#)[^\n]*[\n]+)|((\s*)\/\*([^\/]*)\*\/(\s*))/si", "", $file);
-            $file = preg_replace("/\/\*[\s\S]*?\*\/|([^\\:]|^)\/\/.*$/m", "$1", $file);
-            $file = preg_replace("/(?:\r?\n)*/", "", $file);
-            $file = preg_replace("/,[\t\s]*/", ", ", $file);
-            $file = preg_replace("/\s+/", " ", $file);
-            $file = preg_replace("/(?:(\()\s+)|(?:\s+(\)))/", "$1$2", $file);
+            $file = self::trim($file);
             
             # Explode the loaded content at the semi-colons to get an array of queries.
             $file = array_filter(preg_split("/(?<=;)/", $file));
@@ -821,8 +826,14 @@
             $values = [];
             $types = [];
 
+            # Trim the query of unnecessary content.
+            $query = self::trim($query);
+
             # Extract the values to be parameterised and save the modified query.
             $query = self::extract($query, $values, $settings["tokens"], '?', true);
+
+            # Define the cumulative shift of the query.
+            $cumulativeIndexShift = 0;
 
             # Iterate over the extracted values.
             foreach ($values as $index => &$value) {
@@ -844,10 +855,19 @@
                     $value = doubleval($value);
                 }
 
-                # Check whether the value is 'null'.
-                elseif (strtolower($value) === "null") {
+                # Check whether the value is the empty string or 'null'.
+                elseif ($value === "" || strtolower($value) === "null") {
+                    # Define the value to be injected into the query.
+                    $injectedValue = "NULL";
+
+                    # Increment the index by the cumulative shift, if any.
+                    $index += $cumulativeIndexShift;
+
                     # Remove the placeholder from the query and add NULL, as this value can't be parameterised.
-                    $query = substr($query, 0, $index - 1) . $values[$index] . substr($query, $index);
+                    $query = substr($query, 0, $index - 1) . $injectedValue . substr($query, $index);
+
+                    # Increment the cumulative shift by the length of the injected value.
+                    $cumulativeIndexShift += max(0, strlen($injectedValue) - 1);
 
                     # Unset the value from the array.
                     unset($values[$index]);
@@ -874,7 +894,7 @@
                 "query" => $query,
                 "database" => $this -> credentials["database"],
                 "settings" => $settings,
-                "parameters" => $values,
+                "parameters" => array_values($values),
                 "types" => $types,
                 "error" => null
             ];
@@ -1256,6 +1276,9 @@
                     $returnValue = $operation($commit, $rollback, $savePoint);
                 }
                 catch (Throwable $e) {
+                    # Establish a database connection.
+                    $this -> connect();
+
                     # Roll back the transaction.
                     $rollback($sp);
 
@@ -1276,6 +1299,11 @@
                     $returnValue = $operation($commit, $rollback, $savePoint);
                 }
                 catch (Throwable $e) {
+                    # Establish a database connection.
+                    $this -> connect();
+
+                    App::log("debug", $this -> getQueryLog());
+
                     # Roll back the transaction.
                     $rollback();
                 }
@@ -1292,6 +1320,31 @@
 
             # Return the context.
             return $this;
+        }
+
+        /**
+         * Strips all comments and excess whitespace from a text.
+         * @param string $text the text to make lean
+         * @return string the modified text
+         */
+        protected static function trim (string $text) : string {
+            # Remove all single-line comments.
+            $text = preg_replace("/((?:-- |#)[^\n]*[\n]+)|((\s*)\/\*([^\/]*)\*\/(\s*))/si", "", $text);
+
+            # Remove all multi-line comments.
+            $text = preg_replace("/\/\*[\s\S]*?\*\/|([^\\:]|^)\/\/.*$/m", "$1", $text);
+
+            # Remove all excess whitespace everywhere except if enclosed in backticks or single quotes.
+            $text = preg_replace("/\s+(?=([^`']*[`'][^`']*[`'])*[^`']*$)/", " ", $text);
+
+            # Remove all excess whitespace in the vicinity of commas.
+            $text = preg_replace("/,\s*/", ", ", $text);
+
+            # Remove all excess whitespace after opening parenthesis and before closing parenthesis.
+            $text = preg_replace("/(?:(\()\s+)|(?:\s+(\)))/", "$1$2", $text);
+
+            # Return the modified text.
+            return trim($text);
         }
     }
 
