@@ -1,7 +1,7 @@
 <?php
     /*/
      * Project Name:    SQL Interface (sqlint)
-     * Version:         2.1.2
+     * Version:         2.1.3
      * Repository:      https://github.com/angelpolitis/sql-interface
      * Created by:      Angel Politis
      * Creation Date:   Aug 17 2018
@@ -860,6 +860,9 @@
                     # Define the value to be injected into the query.
                     $injectedValue = "NULL";
 
+                    # Unset the value from the array.
+                    unset($values[$index]);
+
                     # Increment the index by the cumulative shift, if any.
                     $index += $cumulativeIndexShift;
 
@@ -868,9 +871,6 @@
 
                     # Increment the cumulative shift by the length of the injected value.
                     $cumulativeIndexShift += max(0, strlen($injectedValue) - 1);
-
-                    # Unset the value from the array.
-                    unset($values[$index]);
                 }
 
                 # In any other case consider the value a string.
@@ -1301,8 +1301,6 @@
                 catch (Throwable $e) {
                     # Establish a database connection.
                     $this -> connect();
-
-                    App::log("debug", $this -> getQueryLog());
 
                     # Roll back the transaction.
                     $rollback();
