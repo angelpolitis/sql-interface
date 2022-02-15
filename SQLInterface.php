@@ -1,7 +1,7 @@
 <?php
     /*/
      * Project Name:    SQL Interface (sqlint)
-     * Version:         2.1.3
+     * Version:         2.1.4
      * Repository:      https://github.com/angelpolitis/sql-interface
      * Created by:      Angel Politis
      * Creation Date:   Aug 17 2018
@@ -858,7 +858,7 @@
                 # Check whether the value is the empty string or 'null'.
                 elseif ($value === "" || strtolower($value) === "null") {
                     # Define the value to be injected into the query.
-                    $injectedValue = "NULL";
+                    $injectedValue = $value === "" ? "''" : "NULL";
 
                     # Unset the value from the array.
                     unset($values[$index]);
